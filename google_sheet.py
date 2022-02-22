@@ -1,18 +1,15 @@
 import os
 import httplib2
 import apiclient
-import dotenv
 import datetime
 
 from oauth2client.service_account import ServiceAccountCredentials
 from pprint import pprint
 
-#Load API KEY from secure .env file 
-dotenv.load_dotenv()
-
 class GoogleSheetAPI():
+    
+    # Constants
     CREDENTIALS_FILE = 'creds.json'
-    SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
     SHEET_NAME = "'Class Data'!"
     TABLE_STRUCTURE = {
         "TOPIC_NAME": "A",	
@@ -26,19 +23,20 @@ class GoogleSheetAPI():
     INITIAL_DELAY = 0
     MAX_ROWS = 1000000
 
-    credentials = ServiceAccountCredentials.from_json_keyfile_name(
-    CREDENTIALS_FILE,
-    ['https://www.googleapis.com/auth/spreadsheets',
-     'https://www.googleapis.com/auth/drive'])
-    httpAuth = credentials.authorize(httplib2.Http())
-    service = apiclient.discovery.build('sheets', 'v4', http = httpAuth)
+    def __init__(self, spreadsheet_id, keyfile_name) -> None:
+        self.spreadsheet_id = spreadsheet_id
 
-    def __init__(self) -> None:
-        pass
+        self.credentials = ServiceAccountCredentials.from_json_keyfile_name(
+                            keyfile_name,
+                            ['https://www.googleapis.com/auth/spreadsheets',
+                            'https://www.googleapis.com/auth/drive'])
+        
+        self.httpAuth = self.credentials.authorize(httplib2.Http())
+        self.service = apiclient.discovery.build('sheets', 'v4', http = self.httpAuth)
 
     def append_row(self, row_values: list):
-        response = GoogleSheetAPI.service.spreadsheets().values().append(
-            spreadsheetId=GoogleSheetAPI.SPREADSHEET_ID,
+        response = self.service.spreadsheets().values().append(
+            spreadsheetId=self.spreadsheet_id,
             range = "A2:F1000000",
             valueInputOption = "USER_ENTERED",
             insertDataOption = "INSERT_ROWS",
@@ -52,8 +50,8 @@ class GoogleSheetAPI():
         return {'row_index': row_index}
 
     def update_cell(self, value: str, cell_position: str):
-        response = GoogleSheetAPI.service.spreadsheets().values().update(
-            spreadsheetId=GoogleSheetAPI.SPREADSHEET_ID,
+        response = self.service.spreadsheets().values().update(
+            spreadsheetId=self.spreadsheet_id,
             range = cell_position,
             valueInputOption = "USER_ENTERED",
             body = { "values": [[value]]},
@@ -62,17 +60,22 @@ class GoogleSheetAPI():
     def select(self, select_range, dim='ROWS'):
         # ROWS / COLUMNS 
         # TODO DOCSTRING а то Ксюша пристрелит (помогите +7999851670)
-        response = GoogleSheetAPI.service.spreadsheets().values().get(
-            spreadsheetId=GoogleSheetAPI.SPREADSHEET_ID,
+        response = self.service.spreadsheets().values().get(
+            spreadsheetId=self.spreadsheet_id,
             range = select_range,
             majorDimension = dim
         ).execute()
+        print(response)
         return response['values']
 
-    def find_rows(self, search_key, search_value):
+    #TODO сделать метод универсальным
+    def find_rows(self, search_key, search_value, search_type='e'):
         key = GoogleSheetAPI.TABLE_STRUCTURE[search_key]
         values = self.select(f"{key}1:{key}{GoogleSheetAPI.MAX_ROWS}", 'COLUMNS')[0]
-        return [i + 1 for i, e in enumerate(values) if e == search_value]
+        if search_type == 'e':
+            return [i + 1 for i, e in enumerate(values) if e == search_value]
+        if search_type == 'ne':
+            return [i + 1 for i, e in enumerate(values) if e != search_value]
         
     def append_topic(self, topic: str, user: str):
         current_date = datetime.datetime.now().strftime('%Y-%m-%d')
@@ -117,7 +120,7 @@ class GoogleSheetAPI():
         stage_column = GoogleSheetAPI.TABLE_STRUCTURE["STAGE"]
         stage_cell = f"{stage_column}{topic_index[0]}"
         old_stage = self.select(stage_cell, "ROWS")[0][0]
-        new_stage = int(old_stage) + 1
+        new_stage = max(int(old_stage) + 1, 5) # not greater then 5 
         self.update_cell(str(new_stage), stage_cell)
         return "Stage complete"
     
@@ -128,3 +131,11 @@ class GoogleSheetAPI():
         topic_column = GoogleSheetAPI.TABLE_STRUCTURE["TOPIC_NAME"]
         
         return [self.select(f"{topic_column}{x}")[0][0]for x in topic_index]
+
+    def get_all_active_topics(self):
+        topic_index = self.find_rows("STAGE", str(5), 'ne')
+        print(topic_index)
+        if not topic_index:
+            return 'Topic not found'
+        topic_column = GoogleSheetAPI.TABLE_STRUCTURE["TOPIC_NAME"]
+        return [self.select(f"{topic_column}{x}")[0][0]for x in topic_index if x > 1] # убрали первую строчку
