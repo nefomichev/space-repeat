@@ -120,7 +120,7 @@ class GoogleSheetAPI():
         stage_column = GoogleSheetAPI.TABLE_STRUCTURE["STAGE"]
         stage_cell = f"{stage_column}{topic_index[0]}"
         old_stage = self.select(stage_cell, "ROWS")[0][0]
-        new_stage = max(int(old_stage) + 1, 5) # not greater then 5 
+        new_stage = min(int(old_stage) + 1, 5) # not greater then 5 
         self.update_cell(str(new_stage), stage_cell)
         return "Stage complete"
     
