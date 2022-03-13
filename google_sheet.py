@@ -40,7 +40,7 @@ class GoogleSheetAPI():
             range = "A2:F1000000",
             valueInputOption = "USER_ENTERED",
             insertDataOption = "INSERT_ROWS",
-            body = { "values": [row_values]}, # TODO Multiple Rows management
+            body = { "values": [row_values]},
         ).execute()
         
         #index of A + 1 in -> "'Class Data'!A3:E3"
@@ -49,6 +49,24 @@ class GoogleSheetAPI():
 
         return {'row_index': row_index}
 
+    def delete_row(self, row_index: str):
+        response = self.service.spreadsheets().batchUpdate(
+            spreadsheetId=self.spreadsheet_id,
+            body= {"requests": [
+                {
+                    "deleteDimension": {
+                        "range": {
+                            "sheetId": 0,
+                            "dimension": "ROWS",
+                            "startIndex": int(row_index) - 1,
+                            "endIndex":int(row_index),
+                        }
+                    }
+                }
+            ]
+            }
+        ).execute()
+    
     def update_cell(self, value: str, cell_position: str):
         response = self.service.spreadsheets().values().update(
             spreadsheetId=self.spreadsheet_id,
@@ -58,17 +76,14 @@ class GoogleSheetAPI():
         ).execute()
 
     def select(self, select_range, dim='ROWS'):
-        # ROWS / COLUMNS 
-        # TODO DOCSTRING а то Ксюша пристрелит (помогите +7999851670)
+        # dim = ROWS / COLUMNS 
         response = self.service.spreadsheets().values().get(
             spreadsheetId=self.spreadsheet_id,
             range = select_range,
             majorDimension = dim
         ).execute()
-        print(response)
         return response['values']
 
-    #TODO сделать метод универсальным
     def find_rows(self, search_key, search_value, search_type='e'):
         key = GoogleSheetAPI.TABLE_STRUCTURE[search_key]
         values = self.select(f"{key}1:{key}{GoogleSheetAPI.MAX_ROWS}", 'COLUMNS')[0]
@@ -99,8 +114,6 @@ class GoogleSheetAPI():
         self.update_cell(reminder_formula, reminder_date)
 
     def delay_topic(self, topic: str):
-        # TODO поиск по двум полям !!
-        # TODO для нескольких строк
         topic_index = self.find_rows("TOPIC_NAME", topic)
         if not topic_index:
             return 'Topic not found' 
@@ -112,17 +125,22 @@ class GoogleSheetAPI():
         return "Delay complete"
 
     def stage_topic(self, topic: str):
-        # TODO поиск по двум полям !!
-        # TODO для нескольких строк
         topic_index = self.find_rows("TOPIC_NAME", topic)
         if not topic_index:
             return 'Topic not found' 
         stage_column = GoogleSheetAPI.TABLE_STRUCTURE["STAGE"]
         stage_cell = f"{stage_column}{topic_index[0]}"
         old_stage = self.select(stage_cell, "ROWS")[0][0]
-        new_stage = min(int(old_stage) + 1, 5) # not greater then 5 
+        new_stage = min(int(old_stage) + 1, 5) # not greater then last_stage TODO remove constant 
         self.update_cell(str(new_stage), stage_cell)
         return "Stage complete"
+
+    def delete_topic(self, topic: str):
+        topic_index = self.find_rows("TOPIC_NAME", topic)
+        if not topic_index:
+            return 'Topic not found' 
+        self.delete_row(topic_index[0])
+        return "Delete complete"
     
     def get_topics_to_remind(self, reminder_date):
         topic_index = self.find_rows("EXPECTED_REMINDER_DATE", reminder_date)
@@ -134,8 +152,7 @@ class GoogleSheetAPI():
 
     def get_all_active_topics(self):
         topic_index = self.find_rows("STAGE", str(5), 'ne')
-        print(topic_index)
         if not topic_index:
             return 'Topic not found'
         topic_column = GoogleSheetAPI.TABLE_STRUCTURE["TOPIC_NAME"]
-        return [self.select(f"{topic_column}{x}")[0][0]for x in topic_index if x > 1] # убрали первую строчку
+        return [self.select(f"{topic_column}{x}")[0][0]for x in topic_index if x > 1] # removing header
